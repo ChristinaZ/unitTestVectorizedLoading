@@ -145,6 +145,49 @@ __global__ void testBlockLoadTwo(T* in, T* out, int total_num)
     DeviceExampleT(in, out, total_num).VectorizedProcess();
 }
 
+template <typename T, 
+          int BLOCK_THREADS,
+          int ITEMS_PER_THREAD>
+struct DeviceExampleConst
+{
+    using BlockLoadInputT = BlockLoad<T, BLOCK_THREADS, ITEMS_PER_THREAD, BLOCK_LOAD_VECTORIZE>;
+    static constexpr int TILE_ITEMS = BLOCK_THREADS * ITEMS_PER_THREAD;
+
+    const T* in;
+    T* out;
+    int total_num;
+
+    __device__ DeviceExampleConst(const T* in, T* out, int total_num)
+        : in(in), out(out), total_num(total_num)
+    {
+        assert(total_num == BLOCK_THREADS * ITEMS_PER_THREAD);
+    }
+    __device__ __forceinline__ void VectorizedProcess()
+    {
+        T thread_data[ITEMS_PER_THREAD];
+        int tile_base = blockIdx.x * TILE_ITEMS;
+        int offset = threadIdx.x * ITEMS_PER_THREAD + tile_base;
+
+        __shared__ typename BlockLoadInputT::TempStorage temp_storage;
+        BlockLoadInputT(temp_storage).Load(in + tile_base, thread_data);
+
+        for (int i = 0; i < ITEMS_PER_THREAD; i++)
+        {
+            out[offset + i] = thread_data[i] * 2;
+        }
+    }
+};
+
+template <typename T,
+          int BLOCK_THREADS,
+          int ITEMS_PER_THREAD>
+__global__ void testBlockLoadConst(const T* in, T* out, int total_num)
+{
+    using DeviceExampleT = DeviceExampleConst<T, BLOCK_THREADS, ITEMS_PER_THREAD>;
+
+    DeviceExampleT(in, out, total_num).VectorizedProcess();
+}
+
 int main(int argc, char **argv)
 {
     constexpr int BLOCK_NUM = 10;
@@ -172,6 +215,9 @@ int main(int argc, char **argv)
     CUDA_CHECK_LAST_ERROR();
 
     testBlockLoadTwo<float, BLOCK_THREADS, ITEMS_PER_THREAD><<<BLOCK_NUM, BLOCK_THREADS>>>(d_in, d_out, size);
+    CUDA_CHECK_LAST_ERROR();
+
+    testBlockLoadConst<float, BLOCK_THREADS, ITEMS_PER_THREAD><<<BLOCK_NUM, BLOCK_THREADS>>>(d_in, d_out, size);
     CUDA_CHECK_LAST_ERROR();
 
     CUDA_CHECK(cudaFree(d_in));
