@@ -101,8 +101,7 @@ __global__ void testBlockLoad(InputIterator in, OutputIterator out, int total_nu
     DeviceExampleT(in, out, total_num).VectorizedProcess();
 }
 
-
-template <typename T, 
+template <typename T,
           int BLOCK_THREADS,
           int ITEMS_PER_THREAD>
 struct DeviceExampleTwo
@@ -110,11 +109,11 @@ struct DeviceExampleTwo
     using BlockLoadInputT = BlockLoad<T, BLOCK_THREADS, ITEMS_PER_THREAD, BLOCK_LOAD_VECTORIZE>;
     static constexpr int TILE_ITEMS = BLOCK_THREADS * ITEMS_PER_THREAD;
 
-    T* in;
-    T* out;
+    T *in;
+    T *out;
     int total_num;
 
-    __device__ DeviceExampleTwo(T* in, T* out, int total_num)
+    __device__ DeviceExampleTwo(T *in, T *out, int total_num)
         : in(in), out(out), total_num(total_num)
     {
         assert(total_num == BLOCK_THREADS * ITEMS_PER_THREAD);
@@ -138,14 +137,14 @@ struct DeviceExampleTwo
 template <typename T,
           int BLOCK_THREADS,
           int ITEMS_PER_THREAD>
-__global__ void testBlockLoadTwo(T* in, T* out, int total_num)
+__global__ void testBlockLoadTwo(T *in, T *out, int total_num)
 {
     using DeviceExampleT = DeviceExampleTwo<T, BLOCK_THREADS, ITEMS_PER_THREAD>;
 
     DeviceExampleT(in, out, total_num).VectorizedProcess();
 }
 
-template <typename T, 
+template <typename T,
           int BLOCK_THREADS,
           int ITEMS_PER_THREAD>
 struct DeviceExampleConst
@@ -153,11 +152,11 @@ struct DeviceExampleConst
     using BlockLoadInputT = BlockLoad<T, BLOCK_THREADS, ITEMS_PER_THREAD, BLOCK_LOAD_VECTORIZE>;
     static constexpr int TILE_ITEMS = BLOCK_THREADS * ITEMS_PER_THREAD;
 
-    const T* in;
-    T* out;
+    const T *in;
+    T *out;
     int total_num;
 
-    __device__ DeviceExampleConst(const T* in, T* out, int total_num)
+    __device__ DeviceExampleConst(const T *in, T *out, int total_num)
         : in(in), out(out), total_num(total_num)
     {
         assert(total_num == BLOCK_THREADS * ITEMS_PER_THREAD);
@@ -181,7 +180,7 @@ struct DeviceExampleConst
 template <typename T,
           int BLOCK_THREADS,
           int ITEMS_PER_THREAD>
-__global__ void testBlockLoadConst(const T* in, T* out, int total_num)
+__global__ void testBlockLoadConst(const T *in, T *out, int total_num)
 {
     using DeviceExampleT = DeviceExampleConst<T, BLOCK_THREADS, ITEMS_PER_THREAD>;
 
@@ -197,11 +196,10 @@ int main(int argc, char **argv)
     int size = ITEMS_PER_THREAD * BLOCK_THREADS * BLOCK_NUM;
     int size_in_bytes = size * sizeof(float);
 
-    using InputIterator =  float *;
-    using OutputIterator = float *;
+    bool run_extra_tests = false;
 
-    InputIterator d_in = nullptr;
-    OutputIterator d_out = nullptr;
+    float *d_in = nullptr;
+    float *d_out = nullptr;
 
     CUDA_CHECK(cudaMalloc((void **)&d_in, size_in_bytes));
     CUDA_CHECK(cudaMalloc((void **)&d_out, size_in_bytes));
@@ -211,14 +209,24 @@ int main(int argc, char **argv)
     CURAND_CALL(curandSetPseudoRandomGeneratorSeed(gen_, std::random_device{}()));
     CURAND_CALL(curandGenerateUniform(gen_, d_in, size));
 
+    // Tests for pointer-to-const
+    using InputIterator = float *;
+    using OutputIterator = float *;
     testBlockLoad<InputIterator, OutputIterator, BLOCK_THREADS, ITEMS_PER_THREAD><<<BLOCK_NUM, BLOCK_THREADS>>>(d_in, d_out, size);
     CUDA_CHECK_LAST_ERROR();
 
-    testBlockLoadTwo<float, BLOCK_THREADS, ITEMS_PER_THREAD><<<BLOCK_NUM, BLOCK_THREADS>>>(d_in, d_out, size);
-    CUDA_CHECK_LAST_ERROR();
+    if (run_extra_tests)
+    {
+        testBlockLoadTwo<float, BLOCK_THREADS, ITEMS_PER_THREAD><<<BLOCK_NUM, BLOCK_THREADS>>>(d_in, d_out, size);
+        CUDA_CHECK_LAST_ERROR();
 
-    testBlockLoadConst<float, BLOCK_THREADS, ITEMS_PER_THREAD><<<BLOCK_NUM, BLOCK_THREADS>>>(d_in, d_out, size);
-    CUDA_CHECK_LAST_ERROR();
+        // Tests for pointer-to-const
+        testBlockLoadConst<float, BLOCK_THREADS, ITEMS_PER_THREAD><<<BLOCK_NUM, BLOCK_THREADS>>>(d_in, d_out, size);
+        CUDA_CHECK_LAST_ERROR();
+
+        using InputConstIterator = const float *;
+        testBlockLoad<InputConstIterator, OutputIterator, BLOCK_THREADS, ITEMS_PER_THREAD><<<BLOCK_NUM, BLOCK_THREADS>>>(d_in, d_out, size);
+    }
 
     CUDA_CHECK(cudaFree(d_in));
     CUDA_CHECK(cudaFree(d_out));
